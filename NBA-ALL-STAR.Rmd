@@ -1,0 +1,382 @@
+---
+author: Group 342B, Mathias Chen  Tanner Wilson  Suyash Tewari  Aidan Medora  Adi Govil
+output: html_document
+title: NBA All Star Stats Deep Dive
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning = FALSE,
+                      error = TRUE, fig.height = 4)
+library(tidyverse)
+library(lubridate)
+library(broman)
+source("../scripts/viridis.R")
+source("../scripts/ggprob.R")
+```
+
+```{r, include=FALSE}
+players_data = read_csv("NBA File Tot.csv") %>%
+  filter(GS <= G, MP <= 48, !is.na(PTS)) %>%
+  filter(TRB >= ORB + DRB - 0.5, TRB <= ORB+DRB+0.5, PTS >= `3P`*3+`2P`*2+FT-0.5, PTS <= `3P`*3+`2P`*2+FT+0.5) %>%
+  mutate(`SP%` = GS/G, ER = PTS + (TRB + AST + BLK + STL - TOV) * 2, Pos = case_when(str_detect(Pos, "C") ~ "C",
+                                                                                     str_detect(Pos, "F") ~ "F",
+                                                                                     str_detect(Pos, "G") ~ "G")) %>%
+  select(Age, Tm, Year, MP, `eFG%`, TRB, AST, PTS, ER)
+players_data_all = players_data %>%
+  summarize(Age = mean(Age),
+            MP = mean(MP),
+            `eFG%` = mean(`eFG%`),
+            TRB = mean(TRB),
+            AST = mean(AST),
+            PTS = mean(PTS),
+            ER = mean(ER)
+            )
+players_yearly_data_all = players_data %>%
+  group_by(Year) %>%
+  summarize(Age = mean(Age),
+            MP = mean(MP),
+            `eFG%` = mean(`eFG%`),
+            TRB = mean(TRB),
+            AST = mean(AST),
+            PTS = mean(PTS),
+            ER = mean(ER)
+            )
+players_yearly_data_after_2012 = players_yearly_data_all %>%
+  filter(Year >= 2012)
+```
+
+## Intro
+
+After watching NBA games for years, it sometimes upsets me when one of my favorite players with excellent personal performance are not selected to the NBA all-star game, which is one of the greatest personal achievements throughout the career. I often wonder what the standard is, if there is any, to make it look fair to me. **What on earth does it take to be an NBA all-star?**
+
+We use a data set of **all-star players’** individual stats to try to identify the potential requirements/standards for a player to be an all-star.
+
+Also, it may well be possible that we observe a trend in change of standards over the years, since the way the league plays basketball now is much different from what it was 10 or 15 years ago, the standard may change significantly.
+
+## Background
+
+>Raw Data
+
+On the Kaggle link there are 20 separate csv files more than 30 columns of different statistics which can show a player's performance.
+
+However, we are not using every column of this data set. We set the following columns as the primary data:
+
+Year - Year of record. **Note that our data year ranges from 2002 to 2021.**
+
+Age - Age of player at that year. Most players are between 20-40 years old.
+
+MP - Minutes played per game. A whole game is 48 minutes.
+
+eFG% - Effective field goal percentage, which is one of the best statistics to show a player's efficiency on directly scoring.
+
+TRB - Total rebounds. Player gets one rebound if they catches a ball from a missed shot. High rebound stats means that this player is good on securing possessions which can convert to points.
+
+AST - Assists. Player gets one assist if they pass the ball to another player who immediately scores. High assist stats means that this player is good on finding good opportunity to team scoring.
+
+PTS - Points. Player gets points by shooting the ball into the basket. Amount varies on the range and form. High points means that this player is strong on many shooting forms, like long-range shooting by guards and inside-the-paint shooting by centers.
+
+We did not include other columns into our data frame.
+
+>Data manipulation:
+
+Here are a list of things we have done to the raw data.
+
+**We merged all 20 files into one large file with 580 rows.**
+
+**We added one column:**
+
+ER - Effective rating = PTS + (TRB + AST + BLK + STL - TOV) * 2, which may partially reflect a player’s overall performance, regardless of position.
+
+**We deleted several unreasonable rows.**
+
+>Data source
+
+https://www.kaggle.com/datasets/andrew1456/nba-all-stars-20-year-per-game-stats
+
+## Analysis
+
+Let's start from a general question: 
+
+>>Which team does the best in the past 20 years?
+
+```{r, echo = FALSE}
+ggplot(players_data, aes(y = Tm)) + 
+  geom_bar(fill = "blue", color = "black") + 
+  ylab("Team") + 
+  xlab("Number of Canidates") + 
+  ggtitle("How many canidates are from each team for all years")
+```
+
+>>Boston Celtics (BOS) has the most all star players appearance in the past 20 years, followed by Miami Heat (MIA) and Los Angeles Lakers (LAL).
+
+Next, we are deep diving into the detailed data.
+
+>>First, we get the very average of the whole data set, since it's how an "average all star player" is defined:
+
+```{r, echo = FALSE}
+players_data_all
+```
+
+>>Therefore, this should be a starting standard that we are looking for.
+
+>>Following are yearly trend plots. Note that in every plot, the horizontal red line represents the overall average in the above chart.
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_all, aes(x = Year, y = MP)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$MP, color = "red") +
+  geom_smooth(se = FALSE, method = "lm")
+```
+
+Above chart is stats of MP per game. They show a descending trend through years; meaning that an average all star player is less required on this stats. Reasons behind may be that team basketball is more important in this era, diminishing the domination of superstar players. Also, to avoid injuries, players limit their playing time.
+
+```{r, echo = FALSE}
+R_squared = 0.8735
+R_squared
+```
+
+>>We observe that the R-squared value is $0.8735$, indicating a high correlation between MP and Year. Fetching the data for coefficients:
+
+```{r, echo = FALSE}
+df_lm = lm(MP~Year, data = players_yearly_data_all)
+coef(df_lm)
+```
+
+>>Let y be MP, and x be Year, we should have:
+
+$$
+y = 508.8 - 0.2354x
+$$
+
+After similar examination, we found that AST and eFG% shows similar trend patterns with R-squared $>= 0.7$.
+
+>>AST:
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_all, aes(x = Year, y = AST)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$AST, color = "red") +
+  geom_smooth(se = FALSE, method = "lm")
+```
+
+>>R-squared is:
+
+```{r, echo = FALSE}
+R_squared = 0.7217
+R_squared
+```
+
+>>Coefficients:
+
+```{r, echo = FALSE}
+df_lm = lm(AST~Year, data = players_yearly_data_all)
+coef(df_lm)
+```
+
+>>Let y be AST, and x be Year, we should have:
+
+$$
+y = -151.5 + 0.07768x
+$$
+
+>>eFG%:
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_all, aes(x = Year, y = `eFG%`)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$`eFG%`, color = "red") +
+  geom_smooth(se = FALSE, method = "lm")
+```
+
+>>R-squared is:
+
+```{r, echo = FALSE}
+R_squared = 0.7142
+R_squared
+```
+
+>>Coefficients:
+
+```{r, echo = FALSE}
+df_lm = lm(`eFG%`~Year, data = players_yearly_data_all)
+coef(df_lm)
+```
+
+>>Let y be eFG%, and x be Year, we should have:
+
+$$
+y = -5.217 + 0.002852x
+$$
+
+Plugging in $x=2022$ and $2030$, we have:
+
+>>Average all stars in 2022 per game: 32.82 MP, 5.569 AST, 54.97% eFG%.
+
+>>Average all stars in 2030 per game: 30.94 MP, 6.190 AST, 57.26% eFG%.
+
+```{r, echo = FALSE}
+as_2022 = players_data_all %>%
+  mutate(MP = 32.82, AST = 5.569, `eFG%`= 0.5497)
+as_2030 = players_data_all %>%
+  mutate(MP = 30.94, AST = 6.190, `eFG%`= 0.5726)
+```
+
+However, the linear regression of the rest stats are not as ideally. We may observe some increasing or decreasing trend, but it's not that much like a linear trend.
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_all, aes(x = Year, y = PTS)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$PTS, color = "red") +
+  geom_smooth(se = FALSE, method = "loess")
+```
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_all, aes(x = Year, y = ER)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$ER, color = "red")  +
+  geom_smooth(se = FALSE, method = "loess")
+```
+
+>>In fact, if we only take data after 2012, it can be more like a linear trend:
+
+>>PTS:
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_after_2012, aes(x = Year, y = `PTS`)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$`PTS`, color = "red") +
+  geom_smooth(se = FALSE, method = "lm")
+```
+
+>>R-squared is:
+
+```{r, echo = FALSE}
+R_squared = 0.8432
+R_squared
+```
+
+>>Coefficients:
+
+```{r, echo = FALSE}
+df_lm = lm(PTS~Year, data = players_yearly_data_after_2012)
+coef(df_lm)
+```
+
+>>Let y be PTS, and x be Year, we should have:
+
+$$
+y = -934.7 + 0.4745x
+$$
+
+>>ER:
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_after_2012, aes(x = Year, y = `ER`)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$`ER`, color = "red") +
+  geom_smooth(se = FALSE, method = "lm")
+```
+
+>>R-squared is:
+
+```{r, echo = FALSE}
+R_squared = 0.9276
+R_squared
+```
+
+>>Coefficients:
+
+```{r, echo = FALSE}
+df_lm = lm(ER~Year, data = players_yearly_data_after_2012)
+coef(df_lm)
+```
+
+>>Let y be PTS, and x be Year, we should have:
+
+$$
+y = -1612 + 0.8221x
+$$
+
+Plugging in $x=2022$ and $2030$, we have:
+
+>>Average all stars in 2022 per game: 24.74 PTS, 49.78 ER.
+
+>>Average all stars in 2030 per game: 28.54 PTS, 56.36 ER.
+
+```{r, echo = FALSE}
+as_2022 = as_2022 %>%
+  mutate(PTS = 24.74, ER = 49.78)
+as_2030 = as_2030 %>%
+  mutate(PTS = 28.54, ER = 56.36)
+```
+
+In fact, we have stats that is not showing any trend, staying flat. 
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_all, aes(x = Year, y = TRB)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$TRB, color = "red") +
+  geom_smooth(method = "glm")
+```
+
+```{r, echo = FALSE}
+ggplot(players_yearly_data_all, aes(x = Year, y = Age)) +
+  geom_line() +
+  geom_hline(yintercept = players_data_all$Age, color = "red") +
+  geom_smooth(method = "glm")
+```
+
+We decide to use confidence interval to make a prediction, and discard the year dimension to put all player stats together.
+
+```{r, echo = FALSE}
+TRB = players_data$TRB
+t.test(TRB)
+Age = players_data$Age
+t.test(Age)
+```
+
+By doing the t test, we are 95% confident that all star players would have an average of:
+
+>>TRB between 6.900 and 7.416
+
+>>Age between 27.06 and 27.72
+
+```{r, echo = FALSE}
+temp = data.frame(TRB = c(6.9, 7.416), Age = c(27.06, 27.72), ER = 49.78, PTS = 28.54, Type = c("Low", "High"))
+as_2022 = as_2022 %>%
+  select(-TRB, -Age) %>%
+  full_join(temp %>% select(-PTS), by = "ER") %>%
+  select(8,1,7,2,6,3,4,5)
+as_2030 = as_2030 %>%
+  select(-TRB, -Age) %>%
+  full_join(temp %>% select(-ER), by = "PTS") %>%
+  select(8,1,7,2,6,3,4,5)
+```
+
+## Discussion
+
+>>Let's review our initial standard:
+
+```{r, echo = FALSE}
+players_data_all
+```
+
+>>Alongside with the our estimation for 2022:
+
+```{r, echo = FALSE}
+as_2022
+```
+
+>>For 2030:
+
+```{r, echo = FALSE}
+as_2030
+```
+
+>>Above charts of stats are the values that we expect an all star player of the corresponding year would have on average. 
+An average all-star player on 2022 is expected to get 5.569 assists, 24.74 points, and 49.78 efficiency rating in 32.82 minutes per game, with 54.97% eFG%. Moreover, we are 95% confident about the average rebounds of all all star players to be between 6.900 to 7.416, and the average age be between 27.06 and 27.72.
+An average all-star player on 2030 is expected to get 6.190 assists, 28.54 points, and 56.36 efficiency rating in 30.94 minutes per game, with 57.26% eFG%. Moreover, we are 95% confident about the average rebounds of all all star players to be between 6.900 to 7.416, and the average age be between 27.06 and 27.72.
+
+>>We see that players can get more stats within fewer minutes played, meaning that they are even more efficient. Therefore, it takes even more to be an all star player.
+
+>>Since we only have 20 years' data, this analysis may be biased or incomplete, especially when we do analysis based on year where we have only 20 data points. Also, how a player contributes to his own team may be an important factor that we, and our source data set, have not taken into consideration. We can do more renovations on those data and see if result holds or changes.
